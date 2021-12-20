@@ -1,0 +1,28 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workspaceId": {
+            "value": "<resourceId>"
+        },
+        "actionGroupId": {
+            "value": "<resourceId>"
+        },
+        "servers": {
+            "value": [
+                {
+                    "serverName": "WEB1.cloudpuzzles.net",
+                    "thresholdPercent": 80,
+                    "alertType": "Warning",
+                    "severity": 3
+                },
+                {
+                    "serverName": "WEB2.cloudpuzzles.net",
+                    "thresholdPercent": 80,
+                    "alertType": "Warning",
+                    "severity": 3
+                }
+            ]
+        }
+    }
+}

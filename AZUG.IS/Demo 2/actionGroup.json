@@ -1,0 +1,58 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "customerShortName": {
+            "type": "string",
+            "defaultValue": "cp",
+            "metadata": {
+                "description": "Short name for customer, fx cp for Cloudpuzzles"
+            }
+        },
+        "functionAppName": {
+            "type": "string",
+            "metadata": {
+                "description": "Function app name"
+            }
+        }
+    },
+    "functions": [],
+    "variables": {
+        "actionGroupName": "[concat('sim-', parameters('customerShortName'), '-actgrp')]",
+        "actionGroupShortName": "[concat('sim', parameters('customerShortName'), 'actgrp')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Insights/actionGroups",
+            "apiVersion": "2019-06-01",
+            "name": "[variables('actionGroupName')]",
+            "location": "global",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites',parameters('functionAppName'))]"
+            ],
+            "properties": {
+                "groupShortName": "[variables('actionGroupShortName')]",
+                "enabled": true,
+                "smsReceivers": [],
+                "emailReceivers": [],
+                "webhookReceivers": [],
+                "azureAppPushReceivers": [],
+                "logicAppReceivers": [],
+                "armRoleReceivers": [],
+                "automationRunbookReceivers": [],
+                "itsmReceivers": [],
+                "voiceReceivers": [],
+                "azureFunctionReceivers": [
+                    {
+                        "functionAppResourceId": "[resourceId('Microsoft.Web/sites',parameters('functionAppName'))]",
+                        "name": "alertqualifier",
+                        "functionName": "[parameters('functionAppName')]",
+                        "httpTriggerUrl": "[listKeys(resourceId('Microsoft.Web/sites/functions',parameters('functionAppName'), 'AlertQualifier'),'2015-08-01').trigger_url]",
+                        "useCommonAlertSchema": true
+                    }
+                ]
+            }
+        }
+    ],
+    "outputs": {}
+}

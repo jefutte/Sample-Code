@@ -1,0 +1,241 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "appName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the function app that you wish to create."
+            }
+        },
+        "keyVaultName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the key vault that you wish to create"
+            }
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "[resourceGroup().location]",
+            "metadata": {
+                "description": "Location for all resources."
+            }
+        },
+        "topdeskUrl": {
+            "type": "string",
+            "defaultValue": "https://solvoit.topdesk.net",
+            "metadata": {
+                "description": "description"
+            }
+        },
+        "topdeskUser": {
+            "type": "string",
+            "metadata": {
+                "description": "description"
+            }
+        },
+        "topdeskPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "description"
+            }
+        },
+        "actionGroupName": {
+            "type": "string",
+            "metadata": {
+                "description": "description"
+            }
+        },
+        "actionGroupShortName": {
+            "type": "string",
+            "metadata": {
+                "description": "description"
+            }
+        }
+    },
+    "variables": {
+        "functionAppName": "[parameters('appName')]",
+        "hostingPlanName": "[concat(parameters('appName'), '-plan')]",
+        "appInsightsName": "[concat(parameters('appName'), '-ai')]",
+        "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'functions')]",
+        "storageAccountType": "Standard_LRS",
+        "hostingPlanSku": {
+            "name": "Y1",
+            "tier": "Dynamic",
+            "size": "Y1",
+            "family": "Y",
+            "capacity": 0
+        },
+        "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
+        "topdeskSecretName": "topdeskPassword",
+        "topdeskSecretAppSetting": "[concat('@Microsoft.KeyVault(VaultName=', parameters('keyVaultName'), ';SecretName=',variables('topdeskSecretName'),')')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2021-02-01",
+            "name": "[variables('storageAccountName')]",
+            "location": "[parameters('location')]",
+            "kind": "Storage",
+            "sku": {
+                "name": "[variables('storageAccountType')]"
+            }
+        },
+        {
+            "type": "Microsoft.Insights/components",
+            "apiVersion": "2020-02-02",
+            "name": "[variables('appInsightsName')]",
+            "location": "[parameters('location')]",
+            "kind": "web",
+            "properties": {
+                "Application_Type": "web",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2020-12-01",
+            "name": "[variables('hostingPlanName')]",
+            "location": "[parameters('location')]",
+            "sku": "[variables('hostingPlanSku')]",
+            "properties": {
+                "name": "[variables('hostingPlanName')]"
+            }
+        },
+        {
+            "apiVersion": "2020-12-01",
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('functionAppName')]",
+            "location": "[parameters('location')]",
+            "kind": "functionapp",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+                "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]"
+            ],
+            "properties": {
+                "name": "[variables('functionAppName')]",
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "clientAffinityEnabled": false,
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~3"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "powershell"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value,';')]"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName'))).InstrumentationKey]"
+                        },
+                        {
+                            "name": "TopdeskSecret",
+                            "value": "[variables('topdeskSecretAppSetting')]"
+                        },
+                        {
+                            "name": "TopdeskUrl",
+                            "value": "[parameters('topdeskUrl')]"
+                        },
+                        {
+                            "name": "Topdeskuser",
+                            "value": "[parameters('topdeskUser')]"
+                        },
+                        {
+                            "name": "KeyVaultName",
+                            "value": "[parameters('keyVaultName')]"
+                        },
+                        {
+                            "name": "AzureWebJobsSecretStorageType",
+                            "value": "Files"
+                        }
+                    ]
+                }
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            }
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "apiVersion": "2021-04-01-preview",
+            "name": "[parameters('keyVaultName')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+            ],
+            "properties": {
+                "sku": {
+                    "name": "standard",
+                    "family": "A"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true
+            }
+        },
+        {
+            "name": "[concat(parameters('keyVaultName'), '/', variables('topdeskSecretName'))]",
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2019-09-01",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            ],
+            "properties": {
+                "value": "[parameters('topdeskPassword')]"
+            }
+        },
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2020-04-01-preview",
+            "name": "[guid(concat(resourceGroup().name, parameters('keyVaultName')))]",
+            "scope": "[concat('Microsoft.KeyVault/vaults/', parameters('keyVaultName'))]",
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            ],
+            "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')),'2016-08-01', 'Full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+            }
+        },
+        {
+            "type": "Microsoft.Insights/actionGroups",
+            "apiVersion": "2019-06-01",
+            "name": "[parameters('actionGroupName')]",
+            "location": "global",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites',parameters('appName'))]"
+            ],
+            "properties": {
+                "groupShortName": "[parameters('actionGroupShortName')]",
+                "enabled": true,
+                "smsReceivers": [],
+                "emailReceivers": [],
+                "webhookReceivers": [],
+                "azureAppPushReceivers": [],
+                "logicAppReceivers": [],
+                "armRoleReceivers": [],
+                "automationRunbookReceivers": [],
+                "itsmReceivers": [],
+                "voiceReceivers": [],
+                "azureFunctionReceivers": [
+                    {
+                        "functionAppResourceId": "[resourceId('Microsoft.Web/sites/',parameters('appName'))]",
+                        "name": "alertqualifier",
+                        "functionName": "[parameters('appName')]",
+                        "httpTriggerUrl": "[listSecrets(resourceId('Microsoft.Web/sites/functions',parameters('appName'), 'AlertQualifier'),'2015-08-01').trigger_url]",
+                        "useCommonAlertSchema": true
+                    }
+                ]
+            }
+        }
+    ]
+}

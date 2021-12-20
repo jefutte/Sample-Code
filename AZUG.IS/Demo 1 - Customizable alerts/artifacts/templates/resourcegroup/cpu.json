@@ -1,0 +1,122 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": { 
+        "workspaceId": {
+            "type": "string",
+            "metadata":{
+                "description": "resource id of workspace"
+            }
+        },
+        "actionGroupId": {
+            "type": "string"
+        },
+        "servers": {
+            "type": "array"
+        }
+    },
+    "variables": { 
+        "genericAlertInfo": {
+            "description": "CPU is under heavy load",
+            "evaluationFrequency": "PT15M",
+            "windowSize": "PT1H",
+            "criteria": {
+                "metricName": "Average_% Processor Time",
+                "operator": "GreaterThan",
+                "timeAggregation": "Average"
+            }
+        }
+     },
+    "resources": [ 
+        {
+            "name": "[concat(parameters('servers')[copyIndex()].serverName, ' High CPU ', parameters('servers')[copyIndex()].alertType)]",
+            "type": "microsoft.insights/scheduledqueryrules",
+            "apiVersion": "2018-04-16",
+            "location": "[resourceGroup().location]",
+            "copy": {
+                "count": "[length(parameters('servers'))]",
+                "name": "cpuScheduledQueryCopy"
+            },
+            "tags": {},
+            "properties": {
+                "description": "log to metric description",
+                "enabled": "true",
+                "source": {
+                    "query": null,
+                    "dataSourceId": "[parameters('workspaceId')]"
+                },
+                "schedule": null,
+                "action": {
+                    "criteria": [
+                        {
+                            "metricName": "[variables('genericAlertInfo').criteria.metricName]",
+                            "dimensions": [
+                                {
+                                    "name": "Computer",
+                                    "operator": "Include",
+                                    "values": [
+                                        "[parameters('servers')[copyIndex()].serverName]"
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "odata.type": "Microsoft.WindowsAzure.Management.Monitoring.Alerts.Models.Microsoft.AppInsights.Nexus.DataContracts.Resources.ScheduledQueryRules.LogToMetricAction"
+                }
+            }
+        },
+        {
+            "name": "[concat(parameters('servers')[copyIndex()].serverName, ' High CPU ', parameters('servers')[copyIndex()].alertType)]",
+            "type": "Microsoft.Insights/metricAlerts",
+            "location": "global",
+            "copy": {
+                "count": "[length(parameters('servers'))]",
+                "name": "cpuMetricAlertCopy"
+            },
+            "apiVersion": "2018-03-01",
+            "tags": {},
+            "dependsOn":[
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', concat(parameters('servers')[copyIndex()].serverName, ' High CPU ', parameters('servers')[copyIndex()].alertType))]"
+            ],
+            "properties": {
+                "description": "[variables('genericAlertInfo').Description]",
+                "severity": "[parameters('servers')[copyIndex()].severity]",
+                "enabled": true,
+                "scopes": [
+                    "[parameters('workspaceId')]"
+                ],
+                "evaluationFrequency":"[variables('genericAlertInfo').evaluationFrequency]",
+                "windowSize": "[variables('genericAlertInfo').windowSize]",
+                "criteria": {
+                    "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                    "allOf": [
+                        {
+                            "name" : "[concat(parameters('servers')[copyIndex()].serverName, '-', parameters('servers')[copyIndex()].alertType, '-criteria')]",
+                            "metricName": "[variables('genericAlertInfo').criteria.metricName]",
+                            "dimensions":[
+                                {
+                                    "name": "Computer",
+                                    "operator": "Include",
+                                    "values": [
+                                        "[parameters('servers')[copyIndex()].serverName]"
+                                    ]
+                                }
+                            ],
+                            "operator": "[variables('genericAlertInfo').criteria.operator]",
+                            "threshold" : "[parameters('servers')[copyIndex()].thresholdPercent]",
+                            "timeAggregation": "[variables('genericAlertInfo').criteria.timeAggregation]",
+                            "criterionType": "StaticThresholdCriterion",
+                            "metricNamespace": "Microsoft.OperationalInsights/workspaces"
+                        }
+                    ]
+                },
+                "actions": [
+                    {
+                        "actionGroupId": "[parameters('actionGroupId')]"
+                    }
+                ]
+            }
+        }
+    ],
+    "outputs": {}
+}

@@ -1,0 +1,122 @@
+name: Deploy to test
+
+on:
+  workflow_call:
+    inputs:
+      customer_shortname:
+        required: true
+        type: string
+      location:
+        required: true
+        type: string
+    secrets: 
+      azure_credentials:
+        required: true
+      azure_subscription_id:
+        required: true
+      topdesk_user: 
+        required: true
+      topdesk_password:
+        required: true
+      
+
+
+#    push:
+#      branches: 
+#        -'*/issue*'
+
+env:
+  alertreceiver_function_path: './Functions/AlertQualifier'      # set this to the path to your web app project, defaults to the repository root
+  topdesk_url: https://solvoit.topdesk.net #don't touch
+  ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+
+jobs:
+  build-and-deploy:
+    environment: Cloudpuzzles
+    name: 'Deploy Function apps'
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: set-qualifierrgname
+      run: echo "qualifier_rgname=sim-${{ inputs.customer_shortname }}-alertqualifier" >> $GITHUB_ENV
+
+    - name: set-qualifierfunctionname
+      run: echo "qualifier_functionname=sim-${{ inputs.customer_shortname }}-alertreceiver" >> $GITHUB_ENV
+
+    - name: set-keyvaultname
+      run: echo "qualifier_keyvaultname=sim-${{ inputs.customer_shortname }}-kv" >> $GITHUB_ENV
+
+    - name: set-actiongroupname
+      run: echo "qualifier_actiongroupname=sim-${{ inputs.customer_shortname }}-actgrp" >> $GITHUB_ENV
+
+    - name: set-actiongroupshortname
+      run: echo "qualifier_actiongroupshortname=sim-${{ inputs.customer_shortname }}-agrp" >> $GITHUB_ENV
+
+    - name: Checkout the repo
+      uses: actions/checkout@v2
+
+    #AZURE DEPLOY ARM TEMPLATE
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.azure_credentials }}
+
+    - name: Get current date
+      id: rgdate
+      run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"
+
+    - name: Deploy resource group
+      uses: azure/arm-deploy@v1
+      with:
+        subscriptionId: ${{ secrets.azure_subscription_id }}
+        template: ./Templates/ResourceGroup/azuredeploy.json
+        parameters: 
+          rgLocation=${{ inputs.location }}
+          rgName=${{ env.qualifier_rgname }}
+        scope: subscription
+        region: ${{ inputs.location }}
+        deploymentName: ${{ steps.rgdate.outputs.date }}
+
+    - name: Get current date
+      id: functiondate
+      run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"
+
+    - name: Deploy function app resources
+      uses: azure/arm-deploy@v1
+      with:
+        subscriptionId: ${{ secrets.azure_subcription_id }}
+        resourceGroupName: ${{ env.qualifier_rgname }}
+        template: ./Templates/AlertQualifier/deploy.json
+        parameters: 
+          appName=${{ env.qualifier_functionname }}
+          keyVaultName=${{ env.qualifier_keyvaultname }}
+          topdeskUrl=${{ env.topdesk_url }}
+          topdeskUser=${{ secrets.topdesk_user }}
+          topdeskPassword=${{ secrets.topdesk_password }}
+          actionGroupName=${{ env.qualifier_actiongroupname }}
+          actionGroupShortName=${{ env.qualifier_actiongroupshortname }}
+        deploymentName: ${{ steps.functiondate.outputs.date }}
+    
+    - name: Get FunctionApp publish profile
+      id: publishprofile
+      uses: aliencube/publish-profile-actions@v1
+      env:
+        AZURE_CREDENTIALS: ${{ secrets.azure_credentials }}
+      with:
+        resourceGroupName: ${{ env.qualifier_rgname }}
+        appName: ${{ env.qualifier_functionname }}
+
+    - name: Deploy FunctionApp code
+      uses: Azure/functions-action@v1
+      with:
+        app-name: ${{ env.qualifier_functionname }}
+        package: ${{ env.alertreceiver_function_path }}
+        publish-profile: ${{ steps.publishprofile.outputs.profile }}
+
+    - name: Reset FunctionApp publish profile
+      uses: aliencube/publish-profile-actions@v1
+      env:
+        AZURE_CREDENTIALS: ${{ secrets.azure_credentials }}
+      with:
+        resourceGroupName: ${{ env.qualifier_rgname }}
+        appName: ${{ env.qualifier_functionname }}
+        reset: true
